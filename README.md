@@ -109,6 +109,20 @@ docker-compose exec postgres psql -U postgres -d customer360_dw -f /docker-entry
 
 # (Optional) Start Airflow
 docker-compose up -d airflow-webserver airflow-scheduler
+
+# Initialize Airflow metadata database and create admin user (first time only)
+
+# Initialize Airflow DB (creates tables, log schema, etc.)
+docker compose run --rm airflow-webserver airflow db upgrade
+
+# Create Airflow admin user
+docker compose run --rm airflow-webserver airflow users create \
+  --username admin \
+  --firstname Admin \
+  --lastname User \
+  --role Admin \
+  --email admin@example.com \
+  --password admin
 ```
 
 ---
