@@ -1,0 +1,167 @@
+services:
+  # PostgreSQL Database (Data Warehouse)
+  postgres:
+    image: postgres:15
+    container_name: customer360-postgres
+    environment:
+      POSTGRES_DB: customer360_dw
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - customer360-network
+
+  # Apache Airflow
+  airflow-webserver:
+    build: .
+    image: customer360-airflow:latest
+    container_name: customer360-airflow-webserver
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/customer360_dw
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-arm64'
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./spark_jobs:/opt/airflow/spark_jobs
+      - ./data:/opt/airflow/data
+      - ./scripts:/opt/airflow/scripts
+      - airflow_logs:/opt/airflow/logs
+      - airflow_plugins:/opt/airflow/plugins
+    ports:
+      - "8080:8080"
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - customer360-network
+
+  airflow-scheduler:
+    build: .
+    image: customer360-airflow:latest
+    container_name: customer360-airflow-scheduler
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/customer360_dw
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-arm64'
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./spark_jobs:/opt/airflow/spark_jobs
+      - ./data:/opt/airflow/data
+      - ./scripts:/opt/airflow/scripts
+      - airflow_logs:/opt/airflow/logs
+      - airflow_plugins:/opt/airflow/plugins
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - customer360-network
+
+  # Apache Spark
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: customer360-spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./spark_jobs:/opt/spark_jobs
+      - ./data:/opt/data
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    networks:
+      - customer360-network
+
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: customer360-spark-worker
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./spark_jobs:/opt/spark_jobs
+      - ./data:/opt/data
+    networks:
+      - customer360-network
+
+  # Apache SeaTunnel (using custom build with Postgres connector)
+  seatunnel:
+    image: apache/seatunnel:latest
+    container_name: customer360-seatunnel
+    depends_on:
+      - postgres
+    volumes:
+      - ./seatunnel:/opt/seatunnel/config
+      - ./data:/opt/data
+    command: >
+      sh -c "echo 'SeaTunnel service ready for configuration. 
+      Use: docker exec -it customer360-seatunnel /opt/seatunnel/bin/seatunnel.sh --config /opt/seatunnel/config/batch_job.conf'
+      && sleep infinity"
+    networks:
+      - customer360-network
+
+  # Metabase (Dashboard)
+  metabase:
+    image: metabase/metabase:latest
+    container_name: customer360-metabase
+    depends_on:
+      - postgres
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: customer360_dw
+      MB_DB_PORT: 5432
+      MB_DB_USER: postgres
+      MB_DB_PASS: postgres
+      MB_DB_HOST: postgres
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase_data:/metabase-data
+    networks:
+      - customer360-network
+
+
+volumes:
+  postgres_data:
+  airflow_logs:
+  airflow_plugins:
+  metabase_data:
+
+networks:
+  customer360-network:
+    driver: bridge
