@@ -5,6 +5,7 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 import logging
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -32,24 +33,38 @@ dag = DAG(
 def generate_synthetic_data(**context):
     import subprocess
     import os
+    import glob
 
     scripts_dir = "/opt/airflow/scripts"
     data_dir = "/opt/airflow/data/raw"
+
+    # Clean up existing CSV files before generating new ones
+    csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
+    for csv_file in csv_files:
+        try:
+            os.remove(csv_file)
+            logger.info(f"Removed old file: {csv_file}")
+        except OSError as e:
+            logger.warning(f"Could not remove {csv_file}: {e}")
+
+    # Make the numbers random within a reasonable range
+    num_customers = random.randint(800, 1200)
+    num_transactions = random.randint(15, 25)
 
     cmd = [
         "python",
         os.path.join(scripts_dir, "generate_data.py"),
         "--customers",
-        "1000",
+        str(num_customers),
         "--transactions",
-        "20",
+        str(num_transactions),
         "--output",
         data_dir,
     ]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        logger.info("Data generation completed")
+        logger.info(f"Data generation completed with {num_customers} customers and {num_transactions} transactions per customer")
     except subprocess.CalledProcessError as e:
         logger.error(f"Data generation failed: {e.stderr}")
         raise
@@ -141,6 +156,8 @@ def run_seatunnel_ingestion(config_file, **context):
             table.split(".")[1],
             engine,
             schema=table.split(".")[0],
+            if_exists='append',
+            index=False
         )
 
         logger.info(f"Successfully loaded {len(df)} records to {table}")
@@ -277,7 +294,7 @@ update_lineage_task = PostgresOperator(
 )
 
 # Dependencies
-data_quality_task >> clear_staging_task
+generate_data_task >> data_quality_task >> clear_staging_task
 clear_staging_task >> [
     ingest_customers_task,
     ingest_transactions_task,

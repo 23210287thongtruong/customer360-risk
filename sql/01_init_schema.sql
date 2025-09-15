@@ -7,7 +7,7 @@ SET search_path TO staging,
   public;
 DROP TABLE IF EXISTS staging.customers CASCADE;
 CREATE TABLE staging.customers (
-  customer_id VARCHAR(20) PRIMARY KEY,
+  customer_id UUID PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   date_of_birth DATE,
   address TEXT,
@@ -25,8 +25,8 @@ CREATE TABLE staging.customers (
 );
 DROP TABLE IF EXISTS staging.transactions CASCADE;
 CREATE TABLE staging.transactions (
-  transaction_id VARCHAR(50) PRIMARY KEY,
-  customer_id VARCHAR(20) NOT NULL,
+  transaction_id UUID PRIMARY KEY,
+  customer_id UUID NOT NULL,
   transaction_type VARCHAR(50),
   amount DECIMAL(12, 2),
   timestamp TIMESTAMP,
@@ -42,7 +42,7 @@ CREATE TABLE staging.transactions (
 );
 DROP TABLE IF EXISTS staging.credit_scores CASCADE;
 CREATE TABLE staging.credit_scores (
-  customer_id VARCHAR(20) PRIMARY KEY,
+  customer_id UUID PRIMARY KEY,
   credit_score INTEGER CHECK (
     credit_score BETWEEN 300 AND 850
   ),
@@ -56,7 +56,7 @@ CREATE TABLE staging.credit_scores (
 DROP TABLE IF EXISTS warehouse.dim_customer CASCADE;
 CREATE TABLE warehouse.dim_customer (
   customer_key SERIAL PRIMARY KEY,
-  customer_id VARCHAR(20) UNIQUE NOT NULL,
+  customer_id VARCHAR(50) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   date_of_birth DATE,
   age INTEGER,
@@ -81,7 +81,7 @@ CREATE TABLE warehouse.fact_transactions (
   transaction_key SERIAL PRIMARY KEY,
   transaction_id VARCHAR(50) UNIQUE NOT NULL,
   customer_key INTEGER REFERENCES warehouse.dim_customer(customer_key),
-  customer_id VARCHAR(20) NOT NULL,
+  customer_id VARCHAR(50) NOT NULL,
   transaction_type VARCHAR(50),
   amount DECIMAL(12, 2),
   transaction_date DATE,
@@ -100,7 +100,7 @@ DROP TABLE IF EXISTS warehouse.dim_credit CASCADE;
 CREATE TABLE warehouse.dim_credit (
   credit_key SERIAL PRIMARY KEY,
   customer_key INTEGER REFERENCES warehouse.dim_customer(customer_key),
-  customer_id VARCHAR(20) NOT NULL,
+  customer_id VARCHAR(50) NOT NULL,
   credit_score INTEGER CHECK (
     credit_score BETWEEN 300 AND 850
   ),
@@ -117,7 +117,7 @@ CREATE TABLE warehouse.dim_credit (
 DROP TABLE IF EXISTS analytics.customer_360 CASCADE;
 CREATE TABLE analytics.customer_360 (
   customer_key INTEGER PRIMARY KEY REFERENCES warehouse.dim_customer(customer_key),
-  customer_id VARCHAR(20) UNIQUE NOT NULL,
+  customer_id VARCHAR(50) UNIQUE NOT NULL,
   name VARCHAR(255),
   date_of_birth DATE,
   age INTEGER,
@@ -145,7 +145,7 @@ CREATE TABLE analytics.customer_360 (
   credit_utilization DECIMAL(5, 4),
   debt_to_income_ratio DECIMAL(5, 4),
   risk_score DECIMAL(5, 2),
-  risk_category VARCHAR(20),
+  risk_category VARCHAR(50),
   risk_factors TEXT [],
   last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -163,9 +163,9 @@ CREATE TABLE analytics.risk_scoring_rules (
 DROP TABLE IF EXISTS analytics.customer_risk_history CASCADE;
 CREATE TABLE analytics.customer_risk_history (
   history_id SERIAL PRIMARY KEY,
-  customer_id VARCHAR(20) NOT NULL,
+  customer_id VARCHAR(50) NOT NULL,
   risk_score DECIMAL(5, 2),
-  risk_category VARCHAR(20),
+  risk_category VARCHAR(50),
   risk_factors TEXT [],
   assessment_date DATE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import random
 import argparse
 import os
+import uuid
 
 fake = Faker()
 Faker.seed(42)
@@ -25,7 +26,7 @@ class Customer360DataGenerator:
 
         customers = []
         for i in range(1, self.num_customers + 1):
-            customer_id = f"CUST_{i:06d}"[:20]
+            customer_id = str(uuid.uuid4())
             phone = fake.phone_number()[:20]
 
             customer = {
@@ -73,7 +74,7 @@ class Customer360DataGenerator:
 
             for i in range(num_txns):
                 transaction = {
-                    "transaction_id": f"TXN_{customer_id}_{i + 1:04d}",
+                    "transaction_id": str(uuid.uuid4()),
                     "customer_id": customer_id,
                     "transaction_type": np.random.choice(transaction_types),
                     "amount": round(np.random.exponential(150), 2),

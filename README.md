@@ -83,8 +83,7 @@ CREATE TABLE analytics.customer_360 (
 ### Prerequisites
 
 - Docker Desktop (8GB+ memory recommended)
-- Python 3.9+ (tested with 3.13)
-- UV package manager (optional)
+- Git
 
 ### Setup
 
@@ -93,30 +92,14 @@ CREATE TABLE analytics.customer_360 (
 git clone <repository-url>
 cd customer360-risk
 
-# Set up Python environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+# Start all services
+docker-compose up -d
 
-# Generate synthetic data
-python scripts/generate_data.py --customers 10000 --transactions 50
+# Initialize Airflow DB (first time only)
+docker-compose exec airflow-webserver airflow db upgrade
 
-# Start core services
-docker-compose up -d postgres metabase
-
-# Apply schema
-docker-compose exec postgres psql -U postgres -d customer360_dw -f /docker-entrypoint-initdb.d/init_schema.sql
-
-# (Optional) Start Airflow
-docker-compose up -d airflow-webserver airflow-scheduler
-
-# Initialize Airflow metadata database and create admin user (first time only)
-
-# Initialize Airflow DB (creates tables, log schema, etc.)
-docker compose run --rm airflow-webserver airflow db upgrade
-
-# Create Airflow admin user
-docker compose run --rm airflow-webserver airflow users create \
+# Create Airflow admin user (first time only)
+docker-compose exec airflow-webserver airflow users create \
   --username admin \
   --firstname Admin \
   --lastname User \
@@ -131,14 +114,22 @@ docker compose run --rm airflow-webserver airflow users create \
 
 ### Data Generation
 
+Data generation is handled automatically by the Airflow pipeline, or you can trigger it manually:
+
 ```bash
-python scripts/generate_data.py --customers 1000 --transactions 20 --output ./data/raw
+# Generate data using the pipeline (recommended)
+# Go to http://localhost:8080 and trigger the customer360_risk_pipeline DAG
+
+# Or generate data manually (for testing)
+docker-compose exec airflow-webserver python /opt/airflow/scripts/generate_data.py --customers 1000 --transactions 20 --output /opt/airflow/data/raw
 ```
 
-### Dashboards
+### Access Services
 
-- Metabase: http://localhost:3000
-- Airflow: http://localhost:8080 (admin/admin)
+- **Airflow UI**: http://localhost:8080 (admin/admin)
+- **Metabase**: http://localhost:3000
+- **Spark Master UI**: http://localhost:8081
+- **PostgreSQL**: localhost:5432 (postgres/postgres)
 
 ---
 
@@ -159,20 +150,32 @@ customer360-risk/
 
 ---
 
-## Dependency Management
+## Development
 
-Dependencies are managed with `pip` and `requirements.txt`:
+All development is done within Docker containers. Dependencies are managed via `requirements.txt` and automatically installed in the Docker images.
+
+### Running the Pipeline
+
+1. **Start services**: `docker-compose up -d`
+2. **Access Airflow**: http://localhost:8080
+3. **Trigger DAG**: Run the `customer360_risk_pipeline` DAG
+4. **View results**: Check Metabase at http://localhost:3000
+
+### Useful Commands
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# View logs
+docker-compose logs -f airflow-scheduler
+docker-compose logs -f spark-master
 
-# Add a new dependency
-echo "package-name>=1.0.0" >> requirements.txt
-pip install package-name
+# Connect to database
+docker-compose exec postgres psql -U postgres -d customer360_dw
 
-# Update dependencies
-pip install --upgrade -r requirements.txt
+# Restart services
+docker-compose restart
+
+# Clean up
+docker-compose down -v  # Removes all data!
 ```
 
 ---
