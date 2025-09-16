@@ -87,7 +87,7 @@ CREATE TABLE analytics.customer_360 (
 
 ### Setup
 
-```bash
+````bash
 # Clone the repository
 git clone <repository-url>
 cd customer360-risk
@@ -95,11 +95,32 @@ cd customer360-risk
 # Start all services
 docker-compose up -d
 
-# Initialize Airflow DB (first time only)
-docker-compose exec airflow-webserver airflow db upgrade
+### One-Time Airflow Setup (First-Time Only)
 
-# Create Airflow admin user (first time only)
-docker-compose exec airflow-webserver airflow users create \
+Before running the project for the first time, you need to initialize Airflow's metadata database and create an admin user.
+
+#### 1. Initialize Airflow Database
+
+```bash
+# Initialize the Airflow metadata database
+docker compose run --rm airflow-webserver airflow db init
+
+# Ensure all containers are stopped
+docker compose down
+```
+
+#### 2. Start All Services
+
+```bash
+docker compose up -d
+```
+
+#### 3. Create Airflow Admin User
+
+Once the services are running, create the Airflow admin user:
+
+```bash
+docker compose exec airflow-webserver airflow users create \
   --username admin \
   --firstname Admin \
   --lastname User \
@@ -107,6 +128,8 @@ docker-compose exec airflow-webserver airflow users create \
   --email admin@example.com \
   --password admin
 ```
+
+> **Note:** These steps are only required during the initial setup.
 
 ---
 
@@ -122,7 +145,7 @@ Data generation is handled automatically by the Airflow pipeline, or you can tri
 
 # Or generate data manually (for testing)
 docker-compose exec airflow-webserver python /opt/airflow/scripts/generate_data.py --customers 1000 --transactions 20 --output /opt/airflow/data/raw
-```
+````
 
 ### Access Services
 
