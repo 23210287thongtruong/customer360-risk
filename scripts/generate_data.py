@@ -6,6 +6,7 @@ import random
 import argparse
 import os
 import uuid
+import hashlib
 
 fake = Faker()
 Faker.seed(42)
@@ -23,6 +24,18 @@ class Customer360DataGenerator:
         # Track existing customers using email as business key
         self.existing_customers = {}  # email -> customer_record
 
+    def generate_deterministic_customer_id(self, name, email):
+        """Generate a deterministic customer ID from name and email.
+
+        This ensures consistent IDs for the same customer across runs,
+        supporting reproducible analytics and grouping."""
+        # Create a hash of name + email for deterministic ID generation
+        key = f"{name.lower().strip()}|{email.lower().strip()}"
+        hash_obj = hashlib.md5(key.encode('utf-8'))
+        # Convert first 8 bytes of hash to hex for a shorter, readable ID
+        customer_id = hash_obj.hexdigest()[:16]
+        return f"CUST-{customer_id.upper()}"
+
     def generate_customers(self):
         customers = []
         attempts = 0
@@ -38,7 +51,9 @@ class Customer360DataGenerator:
             if email in self.existing_customers:
                 continue
 
-            customer_id = str(uuid.uuid4())
+            # Use deterministic ID based on name+email for consistent grouping
+            customer_id = self.generate_deterministic_customer_id(name, email)
+
             customer = {
                 "customer_id": customer_id,
                 "name": name,
@@ -269,10 +284,11 @@ class Customer360DataGenerator:
         for _ in range(new_customer_count):
             email = fake.email()
             if email not in self.existing_customers:
-                customer_id = str(uuid.uuid4())
+                name = fake.name()
+                customer_id = self.generate_deterministic_customer_id(name, email)
                 customer = {
                     "customer_id": customer_id,
-                    "name": fake.name(),
+                    "name": name,
                     "date_of_birth": fake.date_of_birth(minimum_age=18, maximum_age=80),
                     "address": fake.address().replace("\n", ", "),
                     "city": fake.city(),

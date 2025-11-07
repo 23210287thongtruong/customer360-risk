@@ -12,8 +12,8 @@ import pandas as pd
 def generate_synthetic_data(**context):
     import subprocess
 
-    scripts_dir = "/opt/airflow/scripts"
-    data_dir = "/opt/airflow/data/raw"
+    scripts_dir = os.environ.get('AIRFLOW_SCRIPTS_DIR', '/opt/airflow/scripts')
+    data_dir = os.environ.get('AIRFLOW_DATA_DIR', '/opt/airflow/data/raw')
 
     # Check if this is the first run (no existing customer data)
     customers_file = os.path.join(data_dir, "customers.csv")
@@ -57,7 +57,7 @@ def generate_synthetic_data(**context):
 
 
 def check_data_quality(**context):
-    data_dir = "/opt/airflow/data/raw"
+    data_dir = os.environ.get('AIRFLOW_DATA_DIR', '/opt/airflow/data/raw')
     customers_file = os.path.join(data_dir, "customers.csv")
     if os.path.exists(customers_file):
         customers_df = pd.read_csv(customers_file)
@@ -80,6 +80,23 @@ def check_data_quality(**context):
             raise ValueError(
                 f"Found {duplicate_customer_ids} customers with duplicate customer_ids"
             )
+
+        # Group by name and check that same names have same customer_id
+        name_groups = customers_df.groupby('name')['customer_id'].nunique()
+        inconsistent_names = name_groups[name_groups > 1]
+        if len(inconsistent_names) > 0:
+            raise ValueError(
+                f"Customer ID generation inconsistency: {len(inconsistent_names)} names have multiple customer_ids. "
+                f"First few examples: {inconsistent_names.head().to_dict()}"
+            )
+
+        # Check that customer_ids follow the expected deterministic format
+        invalid_format_ids = customers_df[~customers_df['customer_id'].str.startswith('CUST-')]
+        if len(invalid_format_ids) > 0:
+            raise ValueError(
+                f"Found {len(invalid_format_ids)} customer_ids with invalid format (should start with 'CUST-')"
+            )
+
     else:
         raise FileNotFoundError(f"Customers file not found: {customers_file}")
     transactions_file = os.path.join(data_dir, "transactions.csv")
@@ -126,43 +143,6 @@ def check_data_quality(**context):
         raise FileNotFoundError(f"Credit scores file not found: {credit_file}")
 
 
-def run_seatunnel_ingestion(config_file, **context):
-    from sqlalchemy import create_engine
-
-    config_mapping = {
-        "customers_ingestion.conf": {
-            "csv_file": "/opt/airflow/data/raw/customers.csv",
-            "table": "staging.customers",
-        },
-        "transactions_ingestion.conf": {
-            "csv_file": "/opt/airflow/data/raw/transactions.csv",
-            "table": "staging.transactions",
-        },
-        "credit_scores_ingestion.conf": {
-            "csv_file": "/opt/airflow/data/raw/credit_scores.csv",
-            "table": "staging.credit_scores",
-        },
-    }
-    if config_file not in config_mapping:
-        raise ValueError(f"Unknown config file: {config_file}")
-    mapping = config_mapping[config_file]
-    csv_file = mapping["csv_file"]
-    table = mapping["table"]
-    if not os.path.exists(csv_file):
-        raise FileNotFoundError(f"CSV file not found: {csv_file}")
-    df = pd.read_csv(csv_file)
-    engine = create_engine(
-        "postgresql+psycopg2://postgres:postgres@postgres:5432/customer360_dw"
-    )
-    df.to_sql(
-        table.split(".")[1],
-        engine,
-        schema=table.split(".")[0],
-        if_exists="append",
-        index=False,
-    )
-
-
 def validate_pipeline_results(**context):
     postgres_hook = PostgresHook(postgres_conn_id="postgres_default")
     tables_to_check = [
@@ -178,11 +158,26 @@ def validate_pipeline_results(**context):
         count_query = f"SELECT COUNT(*) as record_count FROM {table}"
         result = postgres_hook.get_first(count_query)
         record_count = result[0] if result else 0
+
+    customer_grouping_query = """
+        SELECT name, COUNT(DISTINCT customer_id) as unique_customer_ids,
+               COUNT(*) as total_records
+        FROM analytics.customer_360
+        GROUP BY name
+        HAVING COUNT(DISTINCT customer_id) > 1
+    """
+    inconsistent_groups = postgres_hook.get_records(customer_grouping_query)
+    if inconsistent_groups:
+        raise ValueError(
+            f"Customer grouping issue in analytics: {len(inconsistent_groups)} names have multiple customer_ids. "
+            f"This breaks Metabase customer-level aggregations."
+        )
+
     risk_dist_query = """
-        SELECT risk_category, COUNT(*) as count, 
+        SELECT risk_category, COUNT(*) as count,
                ROUND(COUNT(*)::numeric / SUM(COUNT(*)) OVER() * 100, 1) as percentage
-        FROM analytics.customer_360 
-        GROUP BY risk_category 
+        FROM analytics.customer_360
+        GROUP BY risk_category
         ORDER BY risk_category
     """
     postgres_hook.get_records(risk_dist_query)
@@ -212,22 +207,19 @@ generate_data_task = PythonOperator(
 data_quality_task = PythonOperator(
     task_id="check_data_quality", python_callable=check_data_quality, dag=dag
 )
-ingest_customers_task = PythonOperator(
-    task_id="ingest_customers",
-    python_callable=run_seatunnel_ingestion,
-    op_kwargs={"config_file": "customers_ingestion.conf"},
-    dag=dag,
-)
-ingest_transactions_task = PythonOperator(
-    task_id="ingest_transactions",
-    python_callable=run_seatunnel_ingestion,
-    op_kwargs={"config_file": "transactions_ingestion.conf"},
-    dag=dag,
-)
-ingest_credit_task = PythonOperator(
-    task_id="ingest_credit_scores",
-    python_callable=run_seatunnel_ingestion,
-    op_kwargs={"config_file": "credit_scores_ingestion.conf"},
+spark_ingestion_task = SparkSubmitOperator(
+    task_id="spark_data_ingestion",
+    application="/opt/airflow/spark_jobs/ingestion_etl.py",
+    conn_id="spark_default",
+    conf={
+        "spark.executor.memory": "2g",
+        "spark.driver.memory": "1g",
+        "spark.executor.cores": "2",
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true",
+    },
+    packages="org.postgresql:postgresql:42.7.1",
+    application_args=["/opt/airflow/data/raw"],
     dag=dag,
 )
 warehouse_etl_task = SparkSubmitOperator(
@@ -238,6 +230,9 @@ warehouse_etl_task = SparkSubmitOperator(
         "spark.executor.memory": "2g",
         "spark.driver.memory": "1g",
         "spark.executor.cores": "2",
+        "spark.sql.shuffle.partitions": "20",
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.skewJoin.enabled": "true",
     },
     packages="org.postgresql:postgresql:42.7.1",
     dag=dag,
@@ -250,10 +245,15 @@ risk_scoring_task = SparkSubmitOperator(
         "spark.executor.memory": "2g",
         "spark.driver.memory": "1g",
         "spark.executor.cores": "2",
+        "spark.sql.shuffle.partitions": "20",
+        "spark.sql.adaptive.enabled": "true",
+        "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+        "spark.eventLog.enabled": "true",
     },
     packages="org.postgresql:postgresql:42.7.1",
     dag=dag,
 )
+
 validation_task = PythonOperator(
     task_id="validate_pipeline_results",
     python_callable=validate_pipeline_results,
@@ -281,15 +281,9 @@ update_lineage_task = PostgresOperator(
 (
     generate_data_task
     >> data_quality_task
-    >> [
-        ingest_customers_task,
-        ingest_transactions_task,
-        ingest_credit_task,
-    ]
+    >> spark_ingestion_task
+    >> warehouse_etl_task
+    >> risk_scoring_task
+    >> validation_task
+    >> update_lineage_task
 )
-[
-    ingest_customers_task,
-    ingest_transactions_task,
-    ingest_credit_task,
-] >> warehouse_etl_task
-warehouse_etl_task >> risk_scoring_task >> validation_task >> update_lineage_task

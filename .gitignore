@@ -105,6 +105,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+.env
 .env.local
 .env.development
 .env.test
@@ -192,10 +193,6 @@ airflow.db
 dags/__pycache__/
 plugins/__pycache__/
 logs/
-
-# SeaTunnel
-seatunnel/logs/
-seatunnel/checkpoint/
 
 # Metabase
 metabase.db/

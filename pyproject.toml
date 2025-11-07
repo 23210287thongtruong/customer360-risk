@@ -1,0 +1,18 @@
+[project]
+name = "customer360-risk"
+version = "0.1.0"
+description = "Customer 360 Risk Scoring Pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "faker>=20.1.0",
+    "pandas>=1.5.3",
+    "numpy<2.0.0",
+    "psycopg2-binary==2.9.9",
+    "sqlalchemy==1.4.49",
+    "apache-airflow-providers-apache-spark==4.4.0",
+    "pyspark==4.0.1",
+]
+
+[dependency-groups]
+dev = []

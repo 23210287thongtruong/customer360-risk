@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database (Data Warehouse) - Deployed on Master Node
+  # PostgreSQL Database (Data Warehouse)
   postgres:
     image: postgres:15
     container_name: customer360-postgres
@@ -23,24 +21,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    deploy:
-      placement:
-        constraints:
-          - node.role == manager  # Run on master node
-      resources:
-        limits:
-          memory: 2GB  # Leave 2GB for system on 4GB master
-          cpus: '0.8'  # 80% of 1 vCPU
-        reservations:
-          memory: 1GB
-          cpus: '0.5'
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
 
-  # Apache Airflow Webserver - Master Node
+  # Apache Airflow Webserver
   airflow-webserver:
     build: .
     image: customer360-airflow:latest
@@ -78,23 +60,8 @@ services:
       start_period: 60s
     networks:
       - customer360-network
-    deploy:
-      placement:
-        constraints:
-          - node.role == manager
-      resources:
-        limits:
-          memory: 1GB  # Leave room for PostgreSQL
-          cpus: '0.5'
-        reservations:
-          memory: 512MB
-          cpus: '0.25'
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
-  # Apache Airflow Scheduler - Worker Node
+  # Apache Airflow Scheduler
   airflow-scheduler:
     build: .
     image: customer360-airflow:latest
@@ -130,23 +97,8 @@ services:
       start_period: 60s
     networks:
       - customer360-network
-    deploy:
-      placement:
-        constraints:
-          - node.role == worker  # Run on worker nodes
-      resources:
-        limits:
-          memory: 2GB  # More memory for scheduler on worker
-          cpus: '1.0'
-        reservations:
-          memory: 1GB
-          cpus: '0.5'
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
-  # Apache Spark Master - Master Node
+  # Apache Spark Master
   spark-master:
     image: apache/spark:4.0.1-scala2.13-java17-python3-r-ubuntu
     container_name: customer360-spark-master
@@ -171,25 +123,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    deploy:
-      mode: replicated
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-      resources:
-        limits:
-          memory: 512MB  # Light resource usage for master
-          cpus: '0.3'
-        reservations:
-          memory: 256MB
-          cpus: '0.2'
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
-  # Apache Spark Worker - Worker Nodes (1 instance per node)
+  # Apache Spark Worker
   spark-worker:
     image: apache/spark:4.0.1-scala2.13-java17-python3-r-ubuntu
     container_name: customer360-spark-worker
@@ -198,9 +133,9 @@ services:
       - spark-master
     environment:
       - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=4GB  # Optimized for 8GB worker VPS
-      - SPARK_WORKER_CORES=1     # 1 core per worker (leave 1 for system)
+      - SPARK_MASTER_URL= spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2GB  # Reduced for local development
+      - SPARK_WORKER_CORES=1     # Single core for local dev
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
@@ -210,24 +145,8 @@ services:
       - ./data:/opt/data
     networks:
       - customer360-network
-    deploy:
-      mode: global  # One instance per worker node
-      placement:
-        constraints:
-          - node.role == worker
-      resources:
-        limits:
-          memory: 6GB  # 6GB of 8GB for Spark worker
-          cpus: '1.5'  # 1.5 cores of 2 vCPUs
-        reservations:
-          memory: 4GB
-          cpus: '1.0'
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
-  # Metabase (Dashboard) - Worker Node
+  # Metabase (Dashboard)
   metabase:
     image: metabase/metabase:latest
     container_name: customer360-metabase
@@ -253,34 +172,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 120s
-    deploy:
-      placement:
-        constraints:
-          - node.role == worker
-      resources:
-        limits:
-          memory: 2GB  # Metabase needs decent memory
-          cpus: '0.8'
-        reservations:
-          memory: 1GB
-          cpus: '0.5'
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
 
 volumes:
   postgres_data:
-    driver: local
   airflow_logs:
-    driver: local
   airflow_plugins:
-    driver: local
   metabase_data:
-    driver: local
 
 networks:
   customer360-network:
-    driver: overlay
-    attachable: true
+    driver: bridge

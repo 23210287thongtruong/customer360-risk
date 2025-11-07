@@ -1,6 +1,6 @@
 # Customer 360 & Risk Scoring Data Warehouse
 
-A hands-on data engineering project for building a Customer 360 view and risk scoring system using SeaTunnel, Apache Spark, Airflow, and Metabase.
+A hands-on data engineering project for building a Customer 360 view and risk scoring system using Apache Spark, Airflow, and Metabase.
 
 ---
 
@@ -8,7 +8,7 @@ A hands-on data engineering project for building a Customer 360 view and risk sc
 
 This repository walks through the process of:
 
-- Ingesting and syncing data from CSV and other sources with **SeaTunnel**
+- Ingesting and syncing data from CSV sources with **Apache Spark**
 - Generating synthetic customer, transaction, and credit bureau data
 - Transforming and scoring data using Apache Spark ETL pipelines
 - Automating workflows with Apache Airflow
@@ -20,7 +20,7 @@ This repository walks through the process of:
 ## Architecture
 
 ```
-[Faker CSV Data] → [SeaTunnel Ingestion] → [PostgreSQL Staging] → [Spark ETL] → [Data Warehouse] → [Metabase Dashboard]
+[Faker CSV Data] → [Spark Ingestion] → [PostgreSQL Staging] → [Spark ETL] → [Data Warehouse] → [Metabase Dashboard]
                             ↓
                     [Airflow Orchestration]
 ```
@@ -29,16 +29,16 @@ This repository walks through the process of:
 
 ## Technology Stack
 
-| Component              | Technology             | Purpose                     |
-| ---------------------- | ---------------------- | --------------------------- |
-| Data Ingestion         | SeaTunnel              | Batch & streaming ingestion |
-| Data Generation        | Python Faker + Pandas  | Create synthetic datasets   |
-| Data Transformation    | Apache Spark           | ETL and risk scoring        |
-| Workflow Orchestration | Apache Airflow         | Pipeline automation         |
-| Data Warehouse         | PostgreSQL 15          | Layered data storage        |
-| Visualization          | Metabase               | Dashboards & analytics      |
-| Package Management     | pip + requirements.txt | Python dependencies         |
-| Containerization       | Docker Compose         | Service orchestration       |
+| Component              | Technology            | Purpose                      |
+| ---------------------- | --------------------- | ---------------------------- |
+| Data Ingestion         | Apache Spark 4.0.1    | Batch ingestion & validation |
+| Data Generation        | Python Faker + Pandas | Create synthetic datasets    |
+| Data Transformation    | Apache Spark 4.0.1    | ETL and risk scoring         |
+| Workflow Orchestration | Apache Airflow        | Pipeline automation          |
+| Data Warehouse         | PostgreSQL 15         | Layered data storage         |
+| Visualization          | Metabase              | Dashboards & analytics       |
+| Package Management     | uv + pyproject.toml   | Python dependencies          |
+| Containerization       | Docker Compose        | Service orchestration        |
 
 ---
 
@@ -52,7 +52,7 @@ This repository walks through the process of:
 
 **Database Layers**
 
-- Staging (`staging.*`): Raw CSV via SeaTunnel
+- Staging (`staging.*`): Raw CSV via Spark ingestion
 - Warehouse (`warehouse.*`): Cleaned and validated data
 - Analytics (`analytics.*`): Aggregated KPIs, Customer 360 view
 
@@ -87,13 +87,37 @@ CREATE TABLE analytics.customer_360 (
 
 ### Setup
 
-````bash
+#### Option 1: Local Development (Recommended for Development)
+
+For local development without Docker Swarm features:
+
+```bash
 # Clone the repository
 git clone <repository-url>
 cd customer360-risk
 
-# Start all services
-docker-compose up -d
+# Start all services in local mode
+docker-compose -f docker-compose.local.yml up -d
+```
+
+#### Option 2: Production Deployment (Docker Swarm)
+
+For production deployment on VPS with Docker Swarm:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd customer360-risk
+
+# Initialize Docker Swarm (if not already done)
+docker swarm init
+
+# Create overlay network
+docker network create --driver overlay customer360-network
+
+# Start all services in Swarm mode
+docker stack deploy -c docker-compose.yml customer360-stack
+```
 
 ### One-Time Airflow Setup (First-Time Only)
 
@@ -102,17 +126,21 @@ Before running the project for the first time, you need to initialize Airflow's 
 #### 1. Initialize Airflow Database
 
 ```bash
-# Initialize the Airflow metadata database
-docker compose run --rm airflow-webserver airflow db init
+# For local development
+docker-compose -f docker-compose.local.yml run --rm airflow-webserver airflow db init
 
-# Ensure all containers are stopped
-docker compose down
+# For production Swarm
+docker-compose run --rm airflow-webserver airflow db init
 ```
 
 #### 2. Start All Services
 
 ```bash
-docker compose up -d
+# For local development
+docker-compose -f docker-compose.local.yml up -d
+
+# For production Swarm
+docker stack deploy -c docker-compose.yml customer360-stack
 ```
 
 #### 3. Create Airflow Admin User
@@ -120,7 +148,17 @@ docker compose up -d
 Once the services are running, create the Airflow admin user:
 
 ```bash
-docker compose exec airflow-webserver airflow users create \
+# For local development
+docker-compose -f docker-compose.local.yml exec airflow-webserver airflow users create \
+  --username admin \
+  --firstname Admin \
+  --lastname User \
+  --role Admin \
+  --email admin@example.com \
+  --password admin
+
+# For production Swarm
+docker-compose exec airflow-webserver airflow users create \
   --username admin \
   --firstname Admin \
   --lastname User \
@@ -145,7 +183,7 @@ Data generation is handled automatically by the Airflow pipeline, or you can tri
 
 # Or generate data manually (for testing)
 docker-compose exec airflow-webserver python /opt/airflow/scripts/generate_data.py --customers 1000 --transactions 20 --output /opt/airflow/data/raw
-````
+```
 
 ### Access Services
 
@@ -161,13 +199,13 @@ docker-compose exec airflow-webserver python /opt/airflow/scripts/generate_data.
 ```
 customer360-risk/
 ├── dags/             # Airflow DAGs
-├── seatunnel/        # SeaTunnel configs
 ├── spark_jobs/       # Spark ETL scripts
 ├── sql/              # Database schemas
 ├── scripts/          # Data generation scripts
 ├── data/             # Data files
 ├── docker-compose.yml# Services
-├── requirements.txt  # Dependencies
+├── pyproject.toml    # Project configuration & dependencies
+├── uv.lock          # Locked dependency versions
 └── README.md         # This file
 ```
 
@@ -175,7 +213,27 @@ customer360-risk/
 
 ## Development
 
-All development is done within Docker containers. Dependencies are managed via `requirements.txt` and automatically installed in the Docker images.
+All development is done within Docker containers. Dependencies are managed via `pyproject.toml` and automatically installed using `uv` in the Docker images.
+
+### Local Development (Optional)
+
+If you prefer to develop locally instead of using Docker:
+
+```bash
+# Install uv (modern Python package manager)
+pip install uv
+
+# Install dependencies
+uv sync
+
+# Activate virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Run development commands
+uv run pytest tests/
+uv run black scripts/ spark_jobs/ dags/
+uv run ruff check scripts/ spark_jobs/ dags/
+```
 
 ### Running the Pipeline
 
@@ -187,18 +245,19 @@ All development is done within Docker containers. Dependencies are managed via `
 ### Useful Commands
 
 ```bash
-# View logs
-docker-compose logs -f airflow-scheduler
-docker-compose logs -f spark-master
+# Local Development Commands
+docker-compose -f docker-compose.local.yml logs -f airflow-scheduler
+docker-compose -f docker-compose.local.yml logs -f spark-master
+docker-compose -f docker-compose.local.yml exec postgres psql -U postgres -d customer360_dw
+docker-compose -f docker-compose.local.yml restart
+docker-compose -f docker-compose.local.yml down -v  # Removes all data!
 
-# Connect to database
-docker-compose exec postgres psql -U postgres -d customer360_dw
-
-# Restart services
-docker-compose restart
-
-# Clean up
-docker-compose down -v  # Removes all data!
+# Production Swarm Commands
+docker service logs customer360-stack_airflow-scheduler
+docker service logs customer360-stack_spark-master
+docker exec -it $(docker ps -q -f name=customer360-postgres) psql -U postgres -d customer360_dw
+docker stack ps customer360-stack  # Check service status
+docker stack rm customer360-stack  # Remove stack
 ```
 
 ---
