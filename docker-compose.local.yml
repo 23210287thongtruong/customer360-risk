@@ -115,6 +115,7 @@ services:
     ports:
       - "8081:8080"
       - "7077:7077"
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "0.0.0.0", "--port", "7077", "--webui-port", "8080"]
     networks:
       - customer360-network
     healthcheck:
@@ -133,7 +134,7 @@ services:
       - spark-master
     environment:
       - SPARK_MODE=worker
-      - SPARK_MASTER_URL= spark://spark-master:7077
+      - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=2GB  # Reduced for local development
       - SPARK_WORKER_CORES=1     # Single core for local dev
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -143,6 +144,7 @@ services:
     volumes:
       - ./spark_jobs:/opt/spark_jobs
       - ./data:/opt/data
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--memory", "2G", "--cores", "1"]
     networks:
       - customer360-network
 
