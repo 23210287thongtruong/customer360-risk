@@ -69,7 +69,7 @@ default_args = {
 with DAG(
     "customer360_risk_pipeline",
     default_args=default_args,
-    description="Customer 360 ELT Pipeline (Spark + dbt)",
+    description="Customer 360 ELT Pipeline (SeaTunnel + dbt)",
     schedule_interval="@daily",
     max_active_runs=1,
     tags=["customer360", "risk-scoring", "elt", "dbt"],
@@ -82,20 +82,21 @@ with DAG(
             python_callable=generate_synthetic_data,
         )
 
-    # 2. Extract and Load (EL) using PySpark
+    # 2. Extract and Load (EL) using Apache SeaTunnel
     with TaskGroup("extract_and_load") as el_group:
-        spark_ingestion_task = SparkSubmitOperator(
-            task_id="spark_data_ingestion",
-            application="/opt/airflow/spark_jobs/ingestion_etl.py",
-            conn_id="spark_default",
-            conf={
-                "spark.executor.memory": "2g",
-                "spark.driver.memory": "1g",
-                "spark.executor.cores": "2",
-                "spark.sql.adaptive.enabled": "true",
-            },
-            packages="org.postgresql:postgresql:42.7.1",
-            application_args=["/opt/airflow/data/raw"],
+        seatunnel_customers_task = BashOperator(
+            task_id="seatunnel_ingest_customers",
+            bash_command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/customers_ingestion.conf -e local",
+        )
+        
+        seatunnel_transactions_task = BashOperator(
+            task_id="seatunnel_ingest_transactions",
+            bash_command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/transactions_ingestion.conf -e local",
+        )
+        
+        seatunnel_credit_scores_task = BashOperator(
+            task_id="seatunnel_ingest_credit_scores",
+            bash_command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/credit_scores_ingestion.conf -e local",
         )
 
     # 3. Transform (T) and Testing using dbt

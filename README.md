@@ -8,9 +8,9 @@ A hands-on data engineering project for building a Customer 360 view and risk sc
 
 This repository walks through the process of:
 
-- Ingesting and syncing data from CSV sources with **Apache Spark**
+- Ingesting and syncing data from CSV sources with **Apache SeaTunnel**
 - Generating synthetic customer, transaction, and credit bureau data
-- Transforming and scoring data using Apache Spark ETL pipelines
+- Transforming and scoring data using **dbt**
 - Automating workflows with Apache Airflow
 - Storing data in a layered PostgreSQL warehouse
 - Visualizing results in Metabase dashboards
@@ -46,8 +46,8 @@ flowchart TD
         end
 
         %% Ingestion (EL)
-        subgraph EL["Extract & Load (PySpark)"]
-            Spark["PySpark Cluster\n(Enforces Schema, Cleans nulls/duplicates)"]
+        subgraph EL["Extract & Load (SeaTunnel)"]
+            SeaTunnel["Apache SeaTunnel\n(Extracts CSV, Loads JDBC)"]
         end
 
         %% Data Warehouse & Transformation
@@ -63,8 +63,8 @@ flowchart TD
         end
 
         %% Connections
-        RawCSV -->|Reads from Local/S3| Spark
-        Spark -->|JDBC Writes| Staging
+        RawCSV -->|Reads from Local/S3| SeaTunnel
+        SeaTunnel -->|JDBC Writes| Staging
         Staging -->|Reads| dbtRun
         dbtRun -->|Writes Models| Analytics
         dbtTest -.->|Validates| Staging
@@ -83,7 +83,7 @@ flowchart TD
     %% Apply Styles
     class Airflow orchestration;
     class Source,Faker,RawCSV source;
-    class EL,Spark processing;
+    class EL,SeaTunnel processing;
     class DWH,Staging,Analytics storage;
     class DBT,dbtRun,dbtTest transform;
     class Serving,Metabase bi;
@@ -96,7 +96,7 @@ flowchart TD
 | Component              | Technology            | Purpose                      |
 | ---------------------- | --------------------- | ---------------------------- |
 | Data Generation        | Python Faker          | Create massive, dirty datasets|
-| Data Ingestion (EL)    | Apache Spark 4.0.1    | Batch extraction & load      |
+| Data Ingestion (EL)    | Apache SeaTunnel      | Batch extraction & load      |
 | Data Transformation (T)| dbt (Data Build Tool) | SQL modeling & testing       |
 | Workflow Orchestration | Apache Airflow        | Pipeline automation          |
 | Data Warehouse         | PostgreSQL 15         | Layered data storage         |
@@ -117,7 +117,7 @@ flowchart TD
 
 **Database Layers**
 
-- Staging (`staging.*`): Raw CSV via Spark ingestion
+- Staging (`staging.*`): Raw CSV via SeaTunnel ingestion
 - Warehouse (`warehouse.*`): Cleaned and validated data
 - Analytics (`analytics.*`): Aggregated KPIs, Customer 360 view
 
@@ -254,7 +254,6 @@ docker-compose exec airflow-webserver python /opt/airflow/scripts/generate_data.
 
 - **Airflow UI**: http://localhost:8080 (admin/admin)
 - **Metabase**: http://localhost:3000
-- **Spark Master UI**: http://localhost:8081
 - **PostgreSQL**: localhost:5432 (postgres/postgres)
 
 ---
@@ -264,7 +263,7 @@ docker-compose exec airflow-webserver python /opt/airflow/scripts/generate_data.
 ```
 customer360-risk/
 ├── dags/             # Airflow DAGs
-├── spark_jobs/       # Spark ETL scripts
+├── seatunnel/        # SeaTunnel jobs config
 ├── sql/              # Database schemas
 ├── scripts/          # Data generation scripts
 ├── data/             # Data files
@@ -312,14 +311,12 @@ uv run ruff check scripts/ spark_jobs/ dags/
 ```bash
 # Local Development Commands
 docker-compose -f docker-compose.local.yml logs -f airflow-scheduler
-docker-compose -f docker-compose.local.yml logs -f spark-master
 docker-compose -f docker-compose.local.yml exec postgres psql -U postgres -d customer360_dw
 docker-compose -f docker-compose.local.yml restart
 docker-compose -f docker-compose.local.yml down -v  # Removes all data!
 
 # Production Swarm Commands
 docker service logs customer360-stack_airflow-scheduler
-docker service logs customer360-stack_spark-master
 docker exec -it $(docker ps -q -f name=customer360-postgres) psql -U postgres -d customer360_dw
 docker stack ps customer360-stack  # Check service status
 docker stack rm customer360-stack  # Remove stack
@@ -364,7 +361,7 @@ ORDER BY total_spent DESC LIMIT 10;
 
 ## Resources
 
-- [Spark Guide](https://spark.apache.org/docs/latest/)
+- [Apache SeaTunnel Docs](https://seatunnel.apache.org/docs/about)
 - [Airflow Docs](https://airflow.apache.org/docs/)
 - [PostgreSQL Docs](https://www.postgresql.org/docs/)
 - [Metabase Docs](https://www.metabase.com/docs/)
