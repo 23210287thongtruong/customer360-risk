@@ -28,6 +28,7 @@ services:
     image: customer360-airflow:latest
     container_name: customer360-airflow-webserver
     restart: unless-stopped
+    user: root
     depends_on:
       - postgres
     environment:
@@ -44,11 +45,11 @@ services:
       AIRFLOW_DATA_DIR: '/opt/airflow/data/raw'
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./spark_jobs:/opt/spark_jobs
       - ./data:/opt/data
       - ./scripts:/opt/airflow/scripts
       - airflow_logs:/opt/airflow/logs
       - airflow_plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:8080"
     command: webserver
@@ -67,6 +68,7 @@ services:
     image: customer360-airflow:latest
     container_name: customer360-airflow-scheduler
     restart: unless-stopped
+    user: root
     depends_on:
       - postgres
     environment:
@@ -83,11 +85,11 @@ services:
       AIRFLOW_DATA_DIR: '/opt/airflow/data/raw'
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./spark_jobs:/opt/spark_jobs
       - ./data:/opt/data
       - ./scripts:/opt/airflow/scripts
       - airflow_logs:/opt/airflow/logs
       - airflow_plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
     command: scheduler
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
@@ -98,55 +100,7 @@ services:
     networks:
       - customer360-network
 
-  # Apache Spark Master
-  spark-master:
-    image: apache/spark:4.0.1-scala2.13-java17-python3-r-ubuntu
-    container_name: customer360-spark-master
-    restart: unless-stopped
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    volumes:
-      - ./spark_jobs:/opt/spark_jobs
-      - ./data:/opt/data
-    ports:
-      - "8081:8080"
-      - "7077:7077"
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "0.0.0.0", "--port", "7077", "--webui-port", "8080"]
-    networks:
-      - customer360-network
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
-  # Apache Spark Worker
-  spark-worker:
-    image: apache/spark:4.0.1-scala2.13-java17-python3-r-ubuntu
-    container_name: customer360-spark-worker
-    restart: unless-stopped
-    depends_on:
-      - spark-master
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=2GB  # Reduced for local development
-      - SPARK_WORKER_CORES=1     # Single core for local dev
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    volumes:
-      - ./spark_jobs:/opt/spark_jobs
-      - ./data:/opt/data
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--memory", "2G", "--cores", "1"]
-    networks:
-      - customer360-network
 
   # Metabase (Dashboard)
   metabase:

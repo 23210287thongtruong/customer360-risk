@@ -3,11 +3,11 @@ import random
 from datetime import UTC, datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.utils.task_group import TaskGroup
+from docker.types import Mount
 
 
 def generate_synthetic_data(**context):
@@ -82,33 +82,98 @@ with DAG(
             python_callable=generate_synthetic_data,
         )
 
-    # 2. Extract and Load (EL) using Apache SeaTunnel
+    # 2. Extract and Load (EL) using Apache SeaTunnel via Docker
     with TaskGroup("extract_and_load") as el_group:
-        seatunnel_customers_task = BashOperator(
+        seatunnel_customers_task = DockerOperator(
             task_id="seatunnel_ingest_customers",
-            bash_command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/customers_ingestion.conf -e local",
+            image="apache/seatunnel:2.3.13",
+            api_version="auto",
+            auto_remove="force",
+            command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/customers_ingestion.conf -e local",
+            docker_url="unix://var/run/docker.sock",
+            network_mode="customer360-network",
+            mounts=[
+                Mount(
+                    source="/opt/airflow/seatunnel",
+                    target="/opt/airflow/seatunnel",
+                    type="bind",
+                ),
+                Mount(
+                    source="/opt/airflow/data", target="/opt/airflow/data", type="bind"
+                ),
+            ],
+            mount_tmp_dir=False,
         )
-        
-        seatunnel_transactions_task = BashOperator(
+
+        seatunnel_transactions_task = DockerOperator(
             task_id="seatunnel_ingest_transactions",
-            bash_command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/transactions_ingestion.conf -e local",
+            image="apache/seatunnel:2.3.13",
+            api_version="auto",
+            auto_remove="force",
+            command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/transactions_ingestion.conf -e local",
+            docker_url="unix://var/run/docker.sock",
+            network_mode="customer360-network",
+            mounts=[
+                Mount(
+                    source="/opt/airflow/seatunnel",
+                    target="/opt/airflow/seatunnel",
+                    type="bind",
+                ),
+                Mount(
+                    source="/opt/airflow/data", target="/opt/airflow/data", type="bind"
+                ),
+            ],
+            mount_tmp_dir=False,
         )
-        
-        seatunnel_credit_scores_task = BashOperator(
+
+        seatunnel_credit_scores_task = DockerOperator(
             task_id="seatunnel_ingest_credit_scores",
-            bash_command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/credit_scores_ingestion.conf -e local",
+            image="apache/seatunnel:2.3.13",
+            api_version="auto",
+            auto_remove="force",
+            command="seatunnel.sh --config /opt/airflow/seatunnel/jobs/credit_scores_ingestion.conf -e local",
+            docker_url="unix://var/run/docker.sock",
+            network_mode="customer360-network",
+            mounts=[
+                Mount(
+                    source="/opt/airflow/seatunnel",
+                    target="/opt/airflow/seatunnel",
+                    type="bind",
+                ),
+                Mount(
+                    source="/opt/airflow/data", target="/opt/airflow/data", type="bind"
+                ),
+            ],
+            mount_tmp_dir=False,
         )
 
-    # 3. Transform (T) and Testing using dbt
+    # 3. Transform (T) and Testing using dbt via Docker
     with TaskGroup("transform_and_test") as transform_group:
-        dbt_run_task = BashOperator(
+        dbt_run_task = DockerOperator(
             task_id="dbt_run",
-            bash_command="dbt run --project-dir /opt/airflow/dbt --profiles-dir /opt/airflow/dbt",
+            image="ghcr.io/dbt-labs/dbt-postgres:1.7.latest",
+            api_version="auto",
+            auto_remove="force",
+            command="run --project-dir /usr/app/dbt --profiles-dir /usr/app/dbt",
+            docker_url="unix://var/run/docker.sock",
+            network_mode="customer360-network",
+            mounts=[
+                Mount(source="/opt/airflow/dbt", target="/usr/app/dbt", type="bind")
+            ],
+            mount_tmp_dir=False,
         )
-
-        dbt_test_task = BashOperator(
+        dbt_test_task = DockerOperator(
             task_id="dbt_test",
-            bash_command="dbt test --project-dir /opt/airflow/dbt --profiles-dir /opt/airflow/dbt",
+            image="ghcr.io/dbt-labs/dbt-postgres:1.7.latest",
+            api_version="auto",
+            auto_remove="force",
+            command="test --project-dir /usr/app/dbt --profiles-dir /usr/app/dbt",
+            docker_url="unix://var/run/docker.sock",
+            network_mode="customer360-network",
+            mounts=[
+                Mount(source="/opt/airflow/dbt", target="/usr/app/dbt", type="bind")
+            ],
+            mount_tmp_dir=False,
         )
 
         dbt_run_task >> dbt_test_task
