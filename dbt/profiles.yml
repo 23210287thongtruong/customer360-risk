@@ -1,0 +1,21 @@
+customer360_postgres:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: customer360_dw
+      schema: public
+      threads: 4
+    local:
+      type: postgres
+      host: localhost
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: customer360_dw
+      schema: public
+      threads: 4

@@ -29,5 +29,8 @@ COPY pyproject.toml .
 # Install Python dependencies using uv (modern, fast dependency resolver)
 RUN uv sync --no-install-project
 
+# Add uv virtual environment to PATH so Airflow can execute dbt
+ENV PATH="/opt/airflow/.venv/bin:$PATH"
+
 # Explicitly install Apache Spark provider (uv may not handle Airflow providers correctly)
 RUN pip install apache-airflow-providers-apache-spark==4.4.0

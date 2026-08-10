@@ -46,13 +46,21 @@ class Customer360DataGenerator:
 
             name = fake.name()
             email = fake.email()
-
-            # Skip if email already exists
-            if email in self.existing_customers:
+            
+            # Inject dirty data: 2% chance of missing email
+            if random.random() < 0.02:
+                email = None
+            
+            # Skip if email already exists (unless it's None)
+            if email and email in self.existing_customers:
                 continue
 
             # Use deterministic ID based on name+email for consistent grouping
-            customer_id = self.generate_deterministic_customer_id(name, email)
+            customer_id = self.generate_deterministic_customer_id(name, email or name)
+            
+            # Inject dirty data: 1% chance of duplicate customer_id (by not hashing properly)
+            if random.random() < 0.01:
+                customer_id = "CUST-DUPLICATE123"
 
             customer = {
                 "customer_id": customer_id,
@@ -102,11 +110,21 @@ class Customer360DataGenerator:
             num_txns = max(1, num_txns)
 
             for i in range(num_txns):
+                # Inject dirty data: 1% chance of orphaned transaction (non-existent customer)
+                txn_customer_id = customer_id
+                if random.random() < 0.01:
+                    txn_customer_id = "CUST-ORPHAN-999"
+                    
+                # Inject dirty data: 1% chance of negative amount
+                amount = round(np.random.exponential(150), 2)
+                if random.random() < 0.01:
+                    amount = -amount
+
                 transaction = {
                     "transaction_id": str(uuid.uuid4()),
-                    "customer_id": customer_id,
+                    "customer_id": txn_customer_id,
                     "transaction_type": np.random.choice(transaction_types),
-                    "amount": round(np.random.exponential(150), 2),
+                    "amount": amount,
                     "timestamp": fake.date_time_between(
                         start_date="-2y", end_date="now"
                     ),
@@ -161,7 +179,13 @@ class Customer360DataGenerator:
             else:
                 base_score = np.random.normal(550, 80)
 
-            credit_score = max(300, min(850, int(base_score)))
+            # Inject dirty data: 2% chance of invalid credit score (outside 300-850)
+            if random.random() < 0.01:
+                credit_score = int(np.random.randint(100, 299))
+            elif random.random() < 0.02:
+                credit_score = int(np.random.randint(851, 999))
+            else:
+                credit_score = max(300, min(850, int(base_score)))
 
             credit_record = {
                 "customer_id": customer["customer_id"],

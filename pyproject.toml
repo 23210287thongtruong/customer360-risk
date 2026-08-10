@@ -12,7 +12,15 @@ dependencies = [
     "sqlalchemy==1.4.49",
     "apache-airflow-providers-apache-spark==4.4.0",
     "pyspark==4.0.1",
+    "dbt-core>=1.7.0",
+    "dbt-postgres>=1.7.0",
 ]
 
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=8.0.0",
+    "chispa>=0.9.2",
+    "pytest-env>=1.1.1",
+    "black>=24.0.0",
+    "ruff>=0.1.0",
+]

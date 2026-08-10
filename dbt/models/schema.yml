@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: "Customer dimension table"
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: email
+        tests:
+          - not_null
+
+  - name: fact_transactions
+    description: "Transaction fact table"
+    columns:
+      - name: transaction_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
+
+  - name: dim_credit
+    description: "Credit scores dimension table"
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: credit_score
+        tests:
+          - accepted_values:
+              values: [] # Can't easily bound test without custom generic test, but we can do not null
+          - not_null
+
+  - name: customer_360
+    description: "Final analytical view combining customer, transactions, and credit with risk scoring"
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null

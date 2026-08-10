@@ -19,10 +19,74 @@ This repository walks through the process of:
 
 ## Architecture
 
-```
-[Faker CSV Data] → [Spark Ingestion] → [PostgreSQL Staging] → [Spark ETL] → [Data Warehouse] → [Metabase Dashboard]
-                            ↓
-                    [Airflow Orchestration]
+```mermaid
+flowchart TD
+    %% Define Styles
+    classDef orchestration fill:#f0f8ff,stroke:#4a90e2,stroke-width:2px,stroke-dasharray: 5 5;
+    classDef source fill:#f9f9f9,stroke:#666,stroke-width:1px;
+    classDef processing fill:#ffe4e1,stroke:#e74c3c,stroke-width:2px;
+    classDef storage fill:#e6ffe6,stroke:#2ecc71,stroke-width:2px;
+    classDef transform fill:#fff5e6,stroke:#f39c12,stroke-width:2px;
+    classDef bi fill:#e6f7ff,stroke:#3498db,stroke-width:2px;
+    classDef cicd fill:#f4f4f4,stroke:#333,stroke-width:1px,stroke-dasharray: 3 3;
+
+    %% CI/CD
+    subgraph CI["Automated CI/CD (GitHub Actions)"]
+        Tests["PySpark Unit Tests"]
+        Lint["Ruff / Black Code Linting"]
+    end
+    class CI cicd
+
+    %% Orchestration
+    subgraph Airflow["Orchestrator: Apache Airflow"]
+        
+        %% Data Source
+        subgraph Source["Data Source (Simulated Data Lake)"]
+            Faker["Faker Python Script\n(Generates 500k+ rows)"] -->|Writes| RawCSV[("Raw CSV Files\n(Customers, Transactions, Credit)")]
+        end
+
+        %% Ingestion (EL)
+        subgraph EL["Extract & Load (PySpark)"]
+            Spark["PySpark Cluster\n(Enforces Schema, Cleans nulls/duplicates)"]
+        end
+
+        %% Data Warehouse & Transformation
+        subgraph DWH["Data Warehouse (PostgreSQL)"]
+            Staging[("Staging Schema\n(Raw clean tables)")]
+            
+            subgraph DBT["Transform (dbt)"]
+                dbtTest["dbt test\n(Data Quality Checks)"]
+                dbtRun["dbt run\n(SQL Business Logic)"]
+            end
+            
+            Analytics[("Analytics Schema\n(Customer 360, Risk Models)")]
+        end
+
+        %% Connections
+        RawCSV -->|Reads from Local/S3| Spark
+        Spark -->|JDBC Writes| Staging
+        Staging -->|Reads| dbtRun
+        dbtRun -->|Writes Models| Analytics
+        dbtTest -.->|Validates| Staging
+        dbtTest -.->|Validates| Analytics
+    end
+
+    %% Visualization
+    subgraph Serving["Visualization"]
+        Metabase["Metabase Dashboards"]
+    end
+
+    %% Final Connections
+    Analytics -->|Queries| Metabase
+    CI -.->|Ensures Code Quality| Airflow
+
+    %% Apply Styles
+    class Airflow orchestration;
+    class Source,Faker,RawCSV source;
+    class EL,Spark processing;
+    class DWH,Staging,Analytics storage;
+    class DBT,dbtRun,dbtTest transform;
+    class Serving,Metabase bi;
 ```
 
 ---
@@ -31,12 +95,13 @@ This repository walks through the process of:
 
 | Component              | Technology            | Purpose                      |
 | ---------------------- | --------------------- | ---------------------------- |
-| Data Ingestion         | Apache Spark 4.0.1    | Batch ingestion & validation |
-| Data Generation        | Python Faker + Pandas | Create synthetic datasets    |
-| Data Transformation    | Apache Spark 4.0.1    | ETL and risk scoring         |
+| Data Generation        | Python Faker          | Create massive, dirty datasets|
+| Data Ingestion (EL)    | Apache Spark 4.0.1    | Batch extraction & load      |
+| Data Transformation (T)| dbt (Data Build Tool) | SQL modeling & testing       |
 | Workflow Orchestration | Apache Airflow        | Pipeline automation          |
 | Data Warehouse         | PostgreSQL 15         | Layered data storage         |
 | Visualization          | Metabase              | Dashboards & analytics       |
+| CI/CD & Testing        | GitHub Actions, pytest| Automated checks & tests     |
 | Package Management     | uv + pyproject.toml   | Python dependencies          |
 | Containerization       | Docker Compose        | Service orchestration        |
 
