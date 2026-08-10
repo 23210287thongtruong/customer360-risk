@@ -1,8 +1,9 @@
+import logging
+from datetime import UTC, datetime
+
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from datetime import datetime
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class Customer360ETL:
         properties = self.postgres_properties.copy()
         properties["truncate"] = "false"
         if unique_key and mode == "upsert":
-            temp_table = f"temp_{table_name}_{int(datetime.now().timestamp())}"
+            temp_table = f"temp_{table_name}_{int(datetime.now(UTC).timestamp())}"
             df.write.jdbc(
                 url=self.postgres_url,
                 table=f"warehouse.{temp_table}",
@@ -75,7 +76,6 @@ class Customer360ETL:
         customers_df = self.read_staging_table("customers")
 
         customers_repartitioned = customers_df.repartition(10, "customer_id")
-        window_by_email = Window.partitionBy("email")
         
         customers_transformed = customers_repartitioned.select(
             col("customer_id"),
@@ -143,7 +143,7 @@ class Customer360ETL:
                 existing_transactions, "transaction_id", "left_anti"
             )
             logger.info(f"Found {new_transactions.count()} new transactions to process")
-        except:
+        except Exception:  # noqa: BLE001
             logger.info("First run - processing all transactions")
             new_transactions = transactions_df
         
@@ -250,7 +250,7 @@ class Customer360ETL:
 
     def run_etl(self):
         try:
-            customers_df = self.transform_customers()
+            self.transform_customers()
             customers_with_keys = self.spark.read.jdbc(
                 url=self.postgres_url,
                 table="warehouse.dim_customer",
@@ -259,7 +259,7 @@ class Customer360ETL:
             self.transform_transactions(customers_with_keys)
             self.transform_credit_scores(customers_with_keys)
         except Exception as e:
-            logger.error(f"ETL failed: {str(e)}")
+            logger.error(f"ETL failed: {e!s}")
             raise
         finally:
             self.spark.stop()

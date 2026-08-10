@@ -1,9 +1,11 @@
-from pyspark.sql import SparkSession, functions as F, Window
-from pyspark.sql.types import DoubleType
-from pyspark.sql.types import *
-from pyspark.ml.feature import VectorAssembler, StandardScaler, Bucketizer
-from pyspark.ml import Pipeline
 import logging
+
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import Bucketizer, StandardScaler, VectorAssembler
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+from pyspark.sql.types import DoubleType
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +56,6 @@ class RiskScoringETL:
         logger.info("Calculating transaction metrics with advanced aggregations...")
         
         # Window for transaction analytics
-        window_by_customer = Window.partitionBy("customer_id")
         
         transaction_metrics = transactions_df.groupBy("customer_id").agg(
             F.count("transaction_id").alias("total_transactions"),
@@ -341,7 +342,7 @@ class RiskScoringETL:
             self.create_risk_history(customer_360_df)
             self.print_summary_stats(customer_360_df)
         except Exception as e:
-            logger.error(f"ETL failed: {str(e)}")
+            logger.error(f"ETL failed: {e!s}")
             raise
         finally:
             self.spark.stop()
@@ -355,6 +356,10 @@ class RiskScoringETL:
             F.avg("total_spent").alias("avg_spent"),
             F.avg("risk_score").alias("avg_risk_score"),
         ).collect()[0]
+        
+        logger.info(f"Total customers processed: {total_customers}")
+        logger.info(f"Risk distribution: {risk_distribution}")
+        logger.info(f"Average stats: {avg_stats}")
 
 
 def main():

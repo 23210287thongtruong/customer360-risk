@@ -1,12 +1,14 @@
-from datetime import datetime, timedelta
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.utils.task_group import TaskGroup
-import random
 import os
+import random
+from datetime import UTC, datetime, timedelta
+
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.utils.task_group import TaskGroup
+
 
 def generate_synthetic_data(**context):
     import subprocess
@@ -49,7 +51,7 @@ def generate_synthetic_data(**context):
 default_args = {
     "owner": "Data Engineering Team",
     "depends_on_past": False,
-    "start_date": datetime(2024, 1, 1),
+    "start_date": datetime(2024, 1, 1, tzinfo=UTC),
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 1,

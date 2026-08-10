@@ -1,11 +1,10 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    current_timestamp, lit, col, sum as spark_sum,
-    trim, lower
-)
-from pyspark.sql.types import *
 import logging
 import sys
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, current_timestamp, lit, lower, trim
+from pyspark.sql.functions import sum as spark_sum
+from pyspark.sql.types import *
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +234,7 @@ class SparkIngestionETL:
             logger.info("=" * 50)
             
         except Exception as e:
-            logger.error(f"Ingestion failed: {str(e)}")
+            logger.error(f"Ingestion failed: {e!s}")
             raise
         finally:
             self.spark.stop()

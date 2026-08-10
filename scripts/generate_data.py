@@ -1,12 +1,12 @@
-import pandas as pd
-import numpy as np
-from faker import Faker
-from datetime import datetime, timedelta
-import random
 import argparse
-import os
-import uuid
 import hashlib
+import os
+import random
+import uuid
+
+import numpy as np
+import pandas as pd
+from faker import Faker
 
 fake = Faker()
 Faker.seed(42)
