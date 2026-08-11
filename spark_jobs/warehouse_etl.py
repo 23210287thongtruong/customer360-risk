@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 class Customer360ETL:
     def __init__(self, postgres_url, postgres_properties):
         self.spark = (
-            SparkSession.builder
-            .appName("Customer360-Warehouse-ETL")
+            SparkSession.builder.appName("Customer360-Warehouse-ETL")
             .config("spark.sql.adaptive.enabled", "true")
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
             .config("spark.sql.adaptive.skewJoin.enabled", "true")
@@ -72,11 +71,11 @@ class Customer360ETL:
 
     def transform_customers(self):
         logger.info("Transforming customers dimension...")
-        
+
         customers_df = self.read_staging_table("customers")
 
         customers_repartitioned = customers_df.repartition(10, "customer_id")
-        
+
         customers_transformed = customers_repartitioned.select(
             col("customer_id"),
             col("name"),
@@ -103,21 +102,23 @@ class Customer360ETL:
             col("created_date").alias("customer_since"),
             datediff(current_date(), col("created_date")).alias("customer_tenure_days"),
             when(
-                (col("email").isNotNull()) & 
-                (col("name").isNotNull()) & 
-                (col("customer_id").isNotNull()),
-                lit(True)
-            ).otherwise(lit(False)).alias("is_complete_record"),
+                (col("email").isNotNull())
+                & (col("name").isNotNull())
+                & (col("customer_id").isNotNull()),
+                lit(True),
+            )
+            .otherwise(lit(False))
+            .alias("is_complete_record"),
             lit(True).alias("is_active"),
             current_timestamp().alias("created_at"),
             current_timestamp().alias("updated_at"),
         )
-        
+
         # Cache for reuse
         customers_transformed.cache()
-        
+
         logger.info(f"Transformed {customers_transformed.count()} customers")
-        
+
         self.write_warehouse_table(
             customers_transformed,
             "dim_customer",
@@ -128,7 +129,7 @@ class Customer360ETL:
 
     def transform_transactions(self, customers_df):
         logger.info("Transforming transactions fact table...")
-        
+
         transactions_df = self.read_staging_table("transactions")
 
         customer_keys = customers_df.select("customer_id", "customer_key")
@@ -146,24 +147,37 @@ class Customer360ETL:
         except Exception:  # noqa: BLE001
             logger.info("First run - processing all transactions")
             new_transactions = transactions_df
-        
+
         # Advanced window functions for transaction analytics
         window_by_customer = Window.partitionBy("customer_id").orderBy("timestamp")
-        window_by_customer_unbounded = Window.partitionBy("customer_id").orderBy("timestamp").rowsBetween(Window.unboundedPreceding, Window.currentRow)
-        
+        window_by_customer_unbounded = (
+            Window.partitionBy("customer_id")
+            .orderBy("timestamp")
+            .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+        )
+
         # Enrich transactions with advanced metrics
-        transactions_enriched = new_transactions \
-            .withColumn("transaction_date", to_date(col("timestamp"))) \
-            .withColumn("transaction_timestamp", col("timestamp")) \
-            .withColumn("transaction_sequence", row_number().over(window_by_customer)) \
-            .withColumn("running_total", sum("amount").over(window_by_customer_unbounded)) \
-            .withColumn("days_since_last_transaction", 
-                       datediff(col("timestamp"), lag("timestamp").over(window_by_customer))) \
-            .withColumn("amount_vs_avg", 
-                       col("amount") - avg("amount").over(Window.partitionBy("customer_id"))) \
-            .withColumn("is_high_value", 
-                       when(col("amount") > 500, lit(True)).otherwise(lit(False)))
-        
+        transactions_enriched = (
+            new_transactions.withColumn("transaction_date", to_date(col("timestamp")))
+            .withColumn("transaction_timestamp", col("timestamp"))
+            .withColumn("transaction_sequence", row_number().over(window_by_customer))
+            .withColumn(
+                "running_total", sum("amount").over(window_by_customer_unbounded)
+            )
+            .withColumn(
+                "days_since_last_transaction",
+                datediff(col("timestamp"), lag("timestamp").over(window_by_customer)),
+            )
+            .withColumn(
+                "amount_vs_avg",
+                col("amount") - avg("amount").over(Window.partitionBy("customer_id")),
+            )
+            .withColumn(
+                "is_high_value",
+                when(col("amount") > 500, lit(True)).otherwise(lit(False)),
+            )
+        )
+
         # Broadcast join with customer dimension (optimization for small table)
         transactions_transformed = transactions_enriched.join(
             broadcast(customer_keys), "customer_id", "left"
@@ -190,12 +204,16 @@ class Customer360ETL:
             col("is_high_value"),
             current_timestamp().alias("created_at"),
         )
-        
+
         # Repartition by customer for optimal write performance
-        transactions_partitioned = transactions_transformed.repartition(20, "customer_id")
-        
-        logger.info(f"Writing {transactions_partitioned.count()} transactions to warehouse")
-        
+        transactions_partitioned = transactions_transformed.repartition(
+            20, "customer_id"
+        )
+
+        logger.info(
+            f"Writing {transactions_partitioned.count()} transactions to warehouse"
+        )
+
         self.write_warehouse_table(
             transactions_partitioned, "fact_transactions", mode="append"
         )
@@ -203,12 +221,12 @@ class Customer360ETL:
 
     def transform_credit_scores(self, customers_df):
         logger.info("Transforming credit dimension...")
-        
+
         credit_df = self.read_staging_table("credit_scores")
         customer_keys = customers_df.select(
             "customer_id", "customer_key", "annual_income"
         )
-        
+
         # Broadcast join for small dimension
         credit_transformed = credit_df.join(
             broadcast(customer_keys), "customer_id", "left"
@@ -240,9 +258,9 @@ class Customer360ETL:
             current_timestamp().alias("created_at"),
             current_timestamp().alias("updated_at"),
         )
-        
+
         logger.info(f"Transformed {credit_transformed.count()} credit records")
-        
+
         self.write_warehouse_table(
             credit_transformed, "dim_credit", mode="upsert", unique_key="customer_id"
         )

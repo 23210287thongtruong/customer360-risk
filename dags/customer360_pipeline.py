@@ -13,8 +13,8 @@ from airflow.utils.task_group import TaskGroup
 def generate_synthetic_data(**context):
     import subprocess
 
-    scripts_dir = os.environ.get('AIRFLOW_SCRIPTS_DIR', '/opt/airflow/scripts')
-    data_dir = os.environ.get('AIRFLOW_DATA_DIR', '/opt/airflow/data/raw')
+    scripts_dir = os.environ.get("AIRFLOW_SCRIPTS_DIR", "/opt/airflow/scripts")
+    data_dir = os.environ.get("AIRFLOW_DATA_DIR", "/opt/airflow/data/raw")
 
     # Check if this is the first run (no existing customer data)
     customers_file = os.path.join(data_dir, "customers.csv")
@@ -27,9 +27,12 @@ def generate_synthetic_data(**context):
         cmd = [
             "python",
             os.path.join(scripts_dir, "generate_data.py"),
-            "--customers", str(num_customers),
-            "--transactions", str(num_transactions),
-            "--output", data_dir,
+            "--customers",
+            str(num_customers),
+            "--transactions",
+            str(num_transactions),
+            "--output",
+            data_dir,
         ]
     else:
         # Subsequent runs: Incremental simulation
@@ -38,15 +41,19 @@ def generate_synthetic_data(**context):
         cmd = [
             "python",
             os.path.join(scripts_dir, "generate_data.py"),
-            "--customers", str(num_customers),
-            "--transactions", str(num_transactions),
-            "--output", data_dir,
+            "--customers",
+            str(num_customers),
+            "--transactions",
+            str(num_transactions),
+            "--output",
+            data_dir,
             "--incremental",
         ]
     try:
         subprocess.run(cmd, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Data generation failed: {e.stderr}")
+
 
 default_args = {
     "owner": "Data Engineering Team",
@@ -97,12 +104,12 @@ with DAG(
             task_id="dbt_run",
             bash_command="dbt run --project-dir /opt/airflow/dbt --profiles-dir /opt/airflow/dbt",
         )
-        
+
         dbt_test_task = BashOperator(
             task_id="dbt_test",
             bash_command="dbt test --project-dir /opt/airflow/dbt --profiles-dir /opt/airflow/dbt",
         )
-        
+
         dbt_run_task >> dbt_test_task
 
     # 4. Metadata updates

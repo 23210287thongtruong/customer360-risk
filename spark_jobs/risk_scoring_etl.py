@@ -13,8 +13,7 @@ logger = logging.getLogger(__name__)
 class RiskScoringETL:
     def __init__(self, postgres_url, postgres_properties):
         self.spark = (
-            SparkSession.builder
-            .appName("Customer360-Risk-Scoring-ML")
+            SparkSession.builder.appName("Customer360-Risk-Scoring-ML")
             .config("spark.sql.adaptive.enabled", "true")
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
             .config("spark.sql.adaptive.skewJoin.enabled", "true")
@@ -54,9 +53,9 @@ class RiskScoringETL:
 
     def calculate_transaction_metrics(self, customer_df, transactions_df):
         logger.info("Calculating transaction metrics with advanced aggregations...")
-        
+
         # Window for transaction analytics
-        
+
         transaction_metrics = transactions_df.groupBy("customer_id").agg(
             F.count("transaction_id").alias("total_transactions"),
             F.sum("amount").alias("total_spent"),
@@ -81,50 +80,64 @@ class RiskScoringETL:
                 / F.count("*")
             ).alias("weekend_transaction_pct"),
             # Fraud indicators
-            F.sum(F.when(F.col("is_fraud") == True, 1).otherwise(0)).alias("fraud_count"),
+            F.sum(F.when(F.col("is_fraud") == True, 1).otherwise(0)).alias(
+                "fraud_count"
+            ),
             (
                 F.sum(F.when(F.col("is_fraud") == True, F.col("amount")).otherwise(0))
             ).alias("fraud_amount"),
             # Time-based patterns
             F.avg("transaction_hour").alias("avg_transaction_hour"),
             # High-value transaction analysis
-            F.sum(F.when(F.col("amount") > 500, 1).otherwise(0)).alias("high_value_transaction_count"),
+            F.sum(F.when(F.col("amount") > 500, 1).otherwise(0)).alias(
+                "high_value_transaction_count"
+            ),
         )
-        
+
         logger.info(f"Calculated metrics for {transaction_metrics.count()} customers")
         return transaction_metrics
 
     def calculate_risk_score(self, customer_360_df):
         feature_cols = [
-            "credit_score", "credit_utilization", "debt_to_income_ratio",
-            "total_spent", "annual_income", "days_since_last_transaction",
-            "transaction_amount_stddev", "total_transactions"
+            "credit_score",
+            "credit_utilization",
+            "debt_to_income_ratio",
+            "total_spent",
+            "annual_income",
+            "days_since_last_transaction",
+            "transaction_amount_stddev",
+            "total_transactions",
         ]
 
         assembler = VectorAssembler(
-            inputCols=feature_cols,
-            outputCol="features",
-            handleInvalid="keep"
+            inputCols=feature_cols, outputCol="features", handleInvalid="keep"
         )
 
         scaler = StandardScaler(
             inputCol="features",
             outputCol="scaled_features",
             withStd=True,
-            withMean=True
+            withMean=True,
         )
 
         bucketizer = Bucketizer(
             splits=[0.0, 20.0, 40.0, 60.0, 80.0, 100.0],
             inputCol="raw_risk_score",
-            outputCol="risk_bucket"
+            outputCol="risk_bucket",
         )
 
         pipeline = Pipeline(stages=[assembler, scaler])
 
         @F.udf(DoubleType())
-        def calculate_raw_risk(credit_score, credit_util, debt_income,
-                               total_spent, income, days_inactive, volatility):
+        def calculate_raw_risk(
+            credit_score,
+            credit_util,
+            debt_income,
+            total_spent,
+            income,
+            days_inactive,
+            volatility,
+        ):
             credit_score = float(credit_score) if credit_score else 600.0
             credit_util = float(credit_util) if credit_util else 0.5
             debt_income = float(debt_income) if debt_income else 0.2
@@ -134,24 +147,29 @@ class RiskScoringETL:
             volatility = float(volatility) if volatility else 100.0
 
             # Weighted risk components
-            credit_risk = (850 - credit_score) / 850 * 40      # 40% weight
-            util_risk = min(credit_util, 1.0) * 20             # 20% weight
-            debt_risk = min(debt_income / 0.5, 1.0) * 25       # 25% weight
-            volatility_risk = min(volatility / 1000, 1.0) * 10 # 10% weight
-            inactivity_risk = min(days_inactive / 180, 1.0) * 5 # 5% weight
+            credit_risk = (850 - credit_score) / 850 * 40  # 40% weight
+            util_risk = min(credit_util, 1.0) * 20  # 20% weight
+            debt_risk = min(debt_income / 0.5, 1.0) * 25  # 25% weight
+            volatility_risk = min(volatility / 1000, 1.0) * 10  # 10% weight
+            inactivity_risk = min(days_inactive / 180, 1.0) * 5  # 5% weight
 
-            total_risk = credit_risk + util_risk + debt_risk + volatility_risk + inactivity_risk
+            total_risk = (
+                credit_risk + util_risk + debt_risk + volatility_risk + inactivity_risk
+            )
             return min(max(total_risk, 0.0), 100.0)
 
         # Add raw risk score column
         df_with_raw_risk = customer_360_df.withColumn(
             "raw_risk_score",
             calculate_raw_risk(
-                F.col("credit_score"), F.col("credit_utilization"),
-                F.col("debt_to_income_ratio"), F.col("total_spent"),
-                F.col("annual_income"), F.col("days_since_last_transaction"),
-                F.col("transaction_amount_stddev")
-            )
+                F.col("credit_score"),
+                F.col("credit_utilization"),
+                F.col("debt_to_income_ratio"),
+                F.col("total_spent"),
+                F.col("annual_income"),
+                F.col("days_since_last_transaction"),
+                F.col("transaction_amount_stddev"),
+            ),
         )
 
         pipeline_model = pipeline.fit(df_with_raw_risk)
@@ -168,28 +186,37 @@ class RiskScoringETL:
             .when(F.col("risk_bucket") == 3.0, "High")
             .otherwise("Very High")
             .alias("risk_category"),
-
             # Primary risk score
             F.col("raw_risk_score").alias("risk_score"),
-
             # Risk factors array (ML-enhanced identification)
             F.array_remove(
                 F.array(
                     F.when(F.col("credit_score") < 600, F.lit("Low Credit Score")),
-                    F.when(F.col("credit_utilization") > 0.8, F.lit("High Credit Utilization")),
-                    F.when(F.col("debt_to_income_ratio") > 0.4, F.lit("High Debt to Income")),
+                    F.when(
+                        F.col("credit_utilization") > 0.8,
+                        F.lit("High Credit Utilization"),
+                    ),
+                    F.when(
+                        F.col("debt_to_income_ratio") > 0.4,
+                        F.lit("High Debt to Income"),
+                    ),
                     F.when(F.col("total_spent") > 10000, F.lit("High Spending Volume")),
                     F.when(F.col("annual_income") < 30000, F.lit("Low Income")),
-                    F.when(F.col("days_since_last_transaction") > 90, F.lit("Inactive Customer")),
+                    F.when(
+                        F.col("days_since_last_transaction") > 90,
+                        F.lit("Inactive Customer"),
+                    ),
                     F.when(F.col("fraud_count") > 0, F.lit("Fraud History")),
-                    F.when(F.col("transaction_amount_stddev") > 500, F.lit("High Transaction Volatility")),
+                    F.when(
+                        F.col("transaction_amount_stddev") > 500,
+                        F.lit("High Transaction Volatility"),
+                    ),
                 ),
                 None,
             ).alias("risk_factors"),
-
             # ML pipeline metadata
             F.current_timestamp().alias("ml_scored_at"),
-            F.lit("Spark ML Pipeline v1.0").alias("scoring_model_version")
+            F.lit("Spark ML Pipeline v1.0").alias("scoring_model_version"),
         )
 
         logger.info(f"Spark ML risk scoring completed for {final_df.count()} customers")
@@ -200,32 +227,31 @@ class RiskScoringETL:
         Create comprehensive customer 360 view with advanced Spark optimizations.
         """
         logger.info("Creating Customer 360 view with advanced optimizations...")
-        
+
         # Read warehouse tables
         customers_df = self.read_warehouse_table("dim_customer")
         transactions_df = self.read_warehouse_table("fact_transactions")
         credit_df = self.read_warehouse_table("dim_credit")
-        
+
         # Cache frequently accessed dimension table
         customers_df.cache()
         credit_df.cache()
-        
+
         logger.info(f"Loaded {customers_df.count()} customers")
         logger.info(f"Loaded {transactions_df.count()} transactions")
         logger.info(f"Loaded {credit_df.count()} credit records")
-        
+
         # Calculate transaction metrics
         transaction_metrics = self.calculate_transaction_metrics(
             customers_df, transactions_df
         )
-        
+
         # Cache transaction metrics for reuse
         transaction_metrics.cache()
-        
+
         # Broadcast small dimension tables for efficient joins
         customer_360_base = (
-            customers_df
-            .join(F.broadcast(credit_df), "customer_key", "left")
+            customers_df.join(F.broadcast(credit_df), "customer_key", "left")
             .join(transaction_metrics, "customer_id", "left")
             .select(
                 customers_df["customer_key"],
@@ -298,27 +324,29 @@ class RiskScoringETL:
                 ),
             )
         )
-        
+
         # Apply risk scoring with ML features
         customer_360_final = self.calculate_risk_score(customer_360_base).select(
             "*", F.current_timestamp().alias("last_updated")
         )
-        
+
         # Partition for optimal write performance
         customer_360_partitioned = customer_360_final.repartition(10)
-        
+
         # Cache final result before writing
         customer_360_partitioned.cache()
-        
-        logger.info(f"Writing {customer_360_partitioned.count()} customers to analytics layer")
-        
+
+        logger.info(
+            f"Writing {customer_360_partitioned.count()} customers to analytics layer"
+        )
+
         self.write_analytics_table(customer_360_partitioned, "customer_360")
-        
+
         # Unpersist cached DataFrames to free memory
         customers_df.unpersist()
         credit_df.unpersist()
         transaction_metrics.unpersist()
-        
+
         return customer_360_partitioned
 
     def create_risk_history(self, customer_360_df):
@@ -356,7 +384,7 @@ class RiskScoringETL:
             F.avg("total_spent").alias("avg_spent"),
             F.avg("risk_score").alias("avg_risk_score"),
         ).collect()[0]
-        
+
         logger.info(f"Total customers processed: {total_customers}")
         logger.info(f"Risk distribution: {risk_distribution}")
         logger.info(f"Average stats: {avg_stats}")

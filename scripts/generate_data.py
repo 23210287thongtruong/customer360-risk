@@ -31,7 +31,7 @@ class Customer360DataGenerator:
         supporting reproducible analytics and grouping."""
         # Create a hash of name + email for deterministic ID generation
         key = f"{name.lower().strip()}|{email.lower().strip()}"
-        hash_obj = hashlib.md5(key.encode('utf-8'))
+        hash_obj = hashlib.md5(key.encode("utf-8"))
         # Convert first 8 bytes of hash to hex for a shorter, readable ID
         customer_id = hash_obj.hexdigest()[:16]
         return f"CUST-{customer_id.upper()}"
@@ -46,18 +46,18 @@ class Customer360DataGenerator:
 
             name = fake.name()
             email = fake.email()
-            
+
             # Inject dirty data: 2% chance of missing email
             if random.random() < 0.02:
                 email = None
-            
+
             # Skip if email already exists (unless it's None)
             if email and email in self.existing_customers:
                 continue
 
             # Use deterministic ID based on name+email for consistent grouping
             customer_id = self.generate_deterministic_customer_id(name, email or name)
-            
+
             # Inject dirty data: 1% chance of duplicate customer_id (by not hashing properly)
             if random.random() < 0.01:
                 customer_id = "CUST-DUPLICATE123"
@@ -114,7 +114,7 @@ class Customer360DataGenerator:
                 txn_customer_id = customer_id
                 if random.random() < 0.01:
                     txn_customer_id = "CUST-ORPHAN-999"
-                    
+
                 # Inject dirty data: 1% chance of negative amount
                 amount = round(np.random.exponential(150), 2)
                 if random.random() < 0.01:
